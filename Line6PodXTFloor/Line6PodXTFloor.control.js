@@ -1,4 +1,4 @@
-// Controller Script for the Arturia BeatStepPro
+// Line6 Pod XT Script
 // Adapted from the Arturia MiniLab Script
 
 loadAPI(1);
@@ -9,31 +9,13 @@ load ("Extensions.js");
 
 // host.defineController("Arturia", "MiniLab", "1.0", "e48ffd90-3203-11e4-8c21-0800200c9a66");
 
-host.defineController("Arturia", "BeatStepPro", "1.0", "9694E601-0A0E-4535-8A7A-2F935A1BB285");
+host.defineController("Line6", "PodXTLive", "1.0", "9694E601-0A0E-4535-8A7A-2F935A1BB286");
 
 
 host.defineMidiPorts(1, 1);
 
-if (host.platformIsWindows())
-	host.addDeviceNameBasedDiscoveryPair(["Arturia BeatStepPro"], ["Arturia BeatStepPro"]);
-else if (host.platformIsMac())
-	host.addDeviceNameBasedDiscoveryPair(["Arturia BeatStepPro"], ["Arturia BeatStepPro"]);
-else if (host.platformIsLinux())
-	host.addDeviceNameBasedDiscoveryPair(["Arturia BeatStepPro MIDI 1"], ["Arturia BeatStepPro MIDI 1"]);
 
-host.defineSysexIdentityReply("F0 7E ?? 06 02 00 20 6B 02 00 04 0? ?? ?? ?? ?? F7");
-
-// The knobs must be in relative mode in 
-// midi control center.
-// TODO: Last knob not working.
-var Knobs1 = [10, 74, 71, 76, 77, 93, 73, 75];
-var Knobs2 = [114, 18, 19, 16, 17, 91, 79, 72];
-
-// 16 sequencer non velocity sensitive 
-// pads have to be mapped in midi control center
-// as midi CC values below.
-var Pad1 = [20,21,22,23,24,25,26,27,28,29,30,31,
-52,53,54,55];
+var CurrentBank = 1; // If we receive a program change for preset program 1, we are in bank 1.  
 
 var Mode = "Track";
 var SubMode = "VolPan";
@@ -47,9 +29,6 @@ var pageNames = [];
 var pageNumber = 0;
 var pageHasChanged = false;
 
-var padShift = 0;
-var padshiftHasChanged = true;
-var padTranslation = initArray(0, 128);
 
 function showPopupNotification(msg) {
  println('::> '+msg);
@@ -58,20 +37,17 @@ function showPopupNotification(msg) {
 
 function init()
 {
-   // Create the Note Inputs and their Settings
-   MiniLabKeys = host.getMidiInPort(0).createNoteInput("BeatStepPro", "80????", "90????", "B001??", "B002??", "B007??", "B00B??", "B040??", "C0????", "D0????", "E0????");
-   MiniLabKeys.setShouldConsumeEvents(false);
-   MiniLabPads = host.getMidiInPort(0).createNoteInput("MiniLab Pads", "?9????");
-   MiniLabPads.setShouldConsumeEvents(false);
-   MiniLabPads.assignPolyphonicAftertouchToExpression(0, NoteExpression.TIMBRE_UP, 2);
+	host.getMidiInPort(0).setMidiCallback(onMidi);
+    host.getMidiInPort(0).setSysexCallback(onSysex);
+
+	transport = host.createTransportSection();
+	application = host.createApplicationSection();
+	trackBank = host.createTrackBankSection(8, 1, 0);
+	
+   
 
 
-   // Setting Callbacks for Midi and Sysex
-   host.getMidiInPort(0).setMidiCallback(onMidi);
-   host.getMidiInPort(0).setSysexCallback(onSysex);
-
-   setNoteTable(MiniLabPads, padTranslation, padShift);
-
+   
    // Creating the main objects:
    transport = host.createTransport();
    tracks = host.createTrackBank(8, 2, 0);
@@ -81,15 +57,15 @@ function init()
 
    setIndications("track");
 
-   for (var i = 0; i < 8; i++) {
-      uControl.getControl(i).setLabel("CC " + Knobs1[i])
-      uControl.getControl(i + 8).setLabel("CC " + Knobs2[i])
-   }
+ //  for (var i = 0; i < 8; i++) {
+//      uControl.getControl(i).setLabel("CC " + Knobs1[i])
+  //uControl.getControl(i + 8).setLabel("CC " + Knobs2[i])
+  // }
 
    cTrack.addNameObserver(50, "None", function(name){
       tName = name;
       if (tNameHasChanged) {
-         //showPopupNotification("Track: " + name);
+         println('::track::> '+name);
          tNameHasChanged = false;
       }
    });
@@ -97,7 +73,7 @@ function init()
    cDevice.addNameObserver(50, "None", function(name){
       dName = name;
       if (dNameHasChanged) {
-         //showPopupNotification("Device: " + name);
+         println('::device::> '+name);
          dNameHasChanged = false;
       }
    });
@@ -105,7 +81,7 @@ function init()
    cDevice.addPresetNameObserver(50, "None", function(name){
       pName = name;
       if (presetHasChanged) {
-         //showPopupNotification("Preset: " + name);
+         println('::preset::> '+name);
          presetHasChanged = false;
       }
    });
@@ -114,13 +90,14 @@ function init()
       pageNames = [];
       for(var j = 0; j < names.length; j++) {
          pageNames[j] = names[j];
+		 println('::page name::> '+name);
       }
    });
 
    cDevice.addSelectedPageObserver(-1, function(val) {
       pageNumber = val;
       if (pageHasChanged) {
-         //showPopupNotification("Parameter Page " + (val+1) + ": " + pageNames[val]);
+         println("Parameter Page " + (val+1) + ": " + pageNames[val]);
          pageHasChanged = false;
       }
    });
@@ -135,6 +112,7 @@ function init()
       host.getNotificationSettings().setShouldShowMappingNotifications (true);
       host.getNotificationSettings().setShouldShowValueNotifications (true);
    } catch(e) {
+	   println('notification setup failure ')
    }
 
    host.scheduleTask(pollState, null, 500);
@@ -166,170 +144,17 @@ if (trace==2) {
    else if (midi.isNoteOff()) {
 	println('note off '+midi.data1+' '+midi.data2)
    }
+   else if (midi.isProgramChange()) {
+	   println('program change '+midi.data1+' '+midi.data2)
+   }
 }
 
+
    if (midi.isChannelController()) {
-      switch (midi.data1) {
-         case Pad1[0]:
-            if (midi.isOn()) {
-               Mode = "Track";
-               showPopupNotification("Mix Mode");
-            }
-            else {
-               setIndications("track");
-            }
-            break;
-         case Pad1[1]:
-            if (midi.isOn()) {
-               Mode = "Device";
-               showPopupNotification("Device Mode");
-            }
-            else {
-               setIndications("device");
-            }
-            break;
-         case Pad1[2]:
-            if (midi.isOn()) {
-               Mode = "Preset";
-               showPopupNotification("Preset Mode");
-            }
-            else {
-               setIndications("preset");
-            }
-            break;
-         case Pad1[3]:
-            if (midi.isOn()) {
-               Mode = "Arturia";
-               showPopupNotification(Mode + " Mode");
-            }
-            else {
-               setIndications("arturia");
-            }
-            break;
-         case Pad1[4]:
-            switch (Mode) {
-               case "Track":
-                  if (midi.isOn()) {
-                  SubMode = "VolPan";
-                     showPopupNotification("Volume & Pan");
-                  }
-                  else {
-                     setIndications("track");
-                  }
-                  break;
-               case "Device":
-                  if (midi.isOn()) {
-                     dNameHasChanged = true;
-                     cDevice.switchToDevice(DeviceType.ANY, ChainLocation.PREVIOUS);
-                  }
-                  break;
-               case "Preset":
-                  if (midi.isOn()) {
-                     pageHasChanged = true;
-                     cDevice.previousParameterPage();
-                  }
-                  break;
-               case "Arturia":
-                  break;
-            }
-            break;
-         case Pad1[5]:
-            switch (Mode) {
-               case "Track":
-                  if (midi.isOn()) {
-                     SubMode = "Send";
-                     showPopupNotification("Sends");
-                  }
-                  else {
-                     setIndications("send");
-                  }
-                  break;
-               case "Device":
-                  if (midi.isOn()) {
-                     dNameHasChanged = true;
-                     cDevice.switchToDevice(DeviceType.ANY, ChainLocation.NEXT);
-                  }
-                  break;
-               case "Preset":
-                  if (midi.isOn()) {
-                     pageHasChanged = true;
-                     cDevice.nextParameterPage();
-                  }
-                  break;
-            }
-            break;
-         case Pad1[6]:
-            switch (Mode) {
-               case "Track":
-                  if (midi.isOn()) {
-                     tracks.scrollTracksUp();
-                  }
-                  break;
-               case "Device":
-                  if (midi.isOn()) {
-                     tNameHasChanged = true;
-                     cTrack.selectPrevious();
-                  }
-                  break;
-               case "Preset":
-                  if (midi.isOn()) {
-                     presetHasChanged = true;
-                     cDevice.switchToPreviousPreset();
-                  }
-                  break;
-               case "Arturia":
-                  if (midi.isOn()) {
-                     if (padShift > -24) {
-                        padShift -= 8;
-                        var padOffset = (padShift > 0 ? "+" : "") + padShift/8;
-                        showPopupNotification("Drum Bank Shift: " + padOffset);
-                        setNoteTable(MiniLabPads, padTranslation, padShift);
-                     }
-                  }
-                  break;
-            }
-            break;
-         case Pad1[7]:
-            switch (Mode) {
-               case "Track":
-                  if (midi.isOn()) {
-                     tracks.scrollTracksDown();
-                  }
-                  break;
-               case "Device":
-                  if (midi.isOn()) {
-                     tNameHasChanged = true;
-                     cTrack.selectNext();
-                  }
-                  break;
-               case "Preset":
-                  if (midi.isOn()) {
-                     presetHasChanged = true;
-                     cDevice.switchToNextPreset();
-                  }
-                  break;
-               case "Arturia":
-                  if (midi.isOn()) {
-                     if (padShift < 50) {
-                        padShift += 8;
-                        var padOffset = (padShift > 0 ? "+" : "") + padShift/8;
-                        showPopupNotification("Drum Bank Shift: " + padOffset);
-                        setNoteTable(MiniLabPads, padTranslation, padShift);
-                     }
-                  }
-                  break;
-            }
-            break;
-         default:
-            for (var i = 0; i < 8; i++) {
-               if (midi.data1 === Knobs1[i]) {
-                  knobFunc(1, i, midi);
-               }
-               else if (midi.data1 === Knobs2[i]) {
-                  knobFunc(2, i, midi);
-               }
-            }
-      }
+     // TODO MIDI CC HANDLING
+   }
+   else if (midi.isProgramChange()) {
+     // TODO PROGRAM CHANGE.
    }
 }
 
