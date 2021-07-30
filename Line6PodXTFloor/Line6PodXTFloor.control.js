@@ -1,17 +1,19 @@
 // Line6 Pod XT Script : Warren Postma : warren.postma@gmail.com 
 // (Don't expect support by email.  You want to ask a question ask on the KVR forums.)
 
-//loadAPI(1);
-loadAPI(14); // where are these API levels even documented?
+loadAPI(14); // Bitwig 4.0.1+
 
 println('PODXTLive 1.0.1. trace=0 : debug output off,  trace=1 : tracing on,  trace=2 full tracing');
+
+// host.setShouldFailOnDeprecatedUse(true);
 
 var trace = 2;
 
 load ("Extensions.js");
 
 
-host.defineController("Line6", "PodXTLive", "1.0", "9694E601-0A0E-4535-8A7A-2F935A1BB286");
+host.defineController("Line6", "PodXTLive", "1.0", "3937b2bc-23da-45c1-8eb0-5f83a30f3e53", "wpostma");
+
 host.defineMidiPorts(1, 1);
 
 
@@ -87,6 +89,8 @@ function init()
    keys = host.getMidiInPort(0).createNoteInput("MiniLab Keys", "80????", "90????", "B001??", "B002??", "B007??", "B00B??", "B040??", "C0????", "D0????", "E0????");
    keys.setShouldConsumeEvents(false);
    
+
+
    //tracks = host.createTrackBank(8, 2, 0);
    //trackBank = host.createTrackBankSection(8, 1, 0);
    
@@ -100,6 +104,15 @@ function init()
       
 
    //setIndications("track");
+
+   try {
+
+   cursorTrack.clipLauncherSlotBank().addIsSelectedObserver	(	function(index,selected)
+    {
+        if (selected) {
+          println('selected : '+index);
+        }
+    });
 
    cursorTrack.addNameObserver(50, "None", function(name){
       tName = name;
@@ -140,6 +153,13 @@ function init()
          pageHasChanged = false;
       }
    });
+
+  } catch(e) {
+    
+    println('bitwig sucks donkey balls');
+  }
+
+   
 
    try {
       host.getNotificationSettings().setShouldShowSelectionNotifications (true);
@@ -223,7 +243,11 @@ function do_function(number,bank,vdata)
         bank = cursorTrack.clipLauncherSlotBank();
         
         bank.select(activescene);
-        bank.record(activescene);
+        //bank.record(activescene);
+        
+        cursorTrack.recordNewLauncherClip (activescene);
+
+
         activescene = activescene + 1;        
         if (activescene >= 8) {
           activescene = 0;
