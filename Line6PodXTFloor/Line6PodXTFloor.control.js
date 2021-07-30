@@ -3,6 +3,8 @@
 
 loadAPI(1);
 
+println('PODXTLive 1.0.  Type trace=1 for light tracing, trace=2 for full debug tracing');
+
 var trace = 0;
 
 load ("Extensions.js");
@@ -52,6 +54,9 @@ var cc_momentary_tap  		= 64;
 var program = 1;
 var bank = 1;
 
+var callcount  = 0;
+var last_cc = 0;
+
 
 
 function showPopupNotification(msg) {
@@ -77,6 +82,8 @@ function init()
    masterTrack = host.createMasterTrackSection(0);
    trackBank = host.createTrackBankSection(8, 4, 99);
    transport = host.createTransportSection();
+   keys = host.getMidiInPort(0).createNoteInput("MiniLab Keys", "80????", "90????", "B001??", "B002??", "B007??", "B00B??", "B040??", "C0????", "D0????", "E0????");
+   keys.setShouldConsumeEvents(false);
    
    //tracks = host.createTrackBank(8, 2, 0);
    //trackBank = host.createTrackBankSection(8, 1, 0);
@@ -164,52 +171,59 @@ var last_exec = {
 
 function do_function(number,bank,vdata)
 {
-  println('do_function '+number+' '+bank+' '+vdata);
-  
+  if (trace>0) {
+    println('do_function '+number+' '+bank+' '+vdata);
+  }
+
 	// bank 1 
 	if (bank == 1) {
 		if ( (number == 1) &&  (vdata == 0) ){
 			transport.play();
-			println('play');
+			showPopupNotification('play');
 		}
 		else if ( (number == 1) &&  (vdata != 0) ) {
 			transport.stop();
-			println('stop');		
+			showPopupNotification('stop');		
 		}
 		else if  (number == 2) {
 			transport.record();
-			print('record');
+			showPopupNotification('record');
 		}
 		else if  (number == 3)  {
 			transport.toggleLoop();
-			print('toggle loop');
+			showPopupNotification('toggle loop');
 		}	
 		else if (number == 4)   {
 			transport.rewind();
-			print('rewind');
+			showPopupNotification('rewind');
 		}	
 		else if (number == 5)    {
 			transport.fastForward();
-			print('fast forward');		 
+			showPopupNotification('fast forward');		 
 		}
 	}
 	else if (bank == 2) {
 		// bank 2 
 		if (number == 1) {
-			transport.togglePunchIn();
+      transport.togglePunchIn();
+      showPopupNotification('punch in')
 		}
 		else if (number == 2) {
-			transport.togglePunchOut();
+      transport.togglePunchOut();
+      showPopupNotification('punch out')
 		}
 		else if (number == 3) {
-			transport.toggleClick();
+      transport.toggleClick();
+      showPopupNotification('click track');
 		}	
 		else if (number == 4) {
 			//SOLO
-			groove.getEnabled().set( vdata, 127);
+      groove.getEnabled().set( vdata, 127);
+      showPopupNotification('solo');
 		}	
 		else if (number == 5)  {
-			// TODO, BANK 2, FUNCTION 5
+      // TODO, BANK 2, FUNCTION 5
+      showPopupNotification('todo');
 		}	
 	}
 	else if (bank == 3 ) {
@@ -253,57 +267,54 @@ function onOff(dvalue) {
 
 function onMidi(status, data1, data2) {
 
- if (trace==1) {  
-     var command = status & 0xf0;
-     var channel = (status & 0x0f) + 1;
-     println("channel=" + channel + ", command=" + command + ", data1=" + data1 + ", data2=" + data2);
-   }
+  callcount = callcount +1;
 
-   // Instantiate the MidiData Object for convenience:
+    // Instantiate the MidiData Object for convenience:
    var midi = new MidiData(status, data1, data2);
 
-if (trace==2) {
+if (trace>0) {
+  println('onmidi '+callcount+' --> '+status+','+midi.data1+','+midi.data2);
    if (midi.isChannelController()) {
    	
-	if (midi.data1=cc_switch_amp_on_off) {
+	if (midi.data1==cc_switch_amp_on_off) {
    	  println('F1:AMP '+midi.data1+' '+onOff(midi.data2))
 	}
-	else if (midi.data1=cc_switch_stomp_on_off) {
+	else if (midi.data1==cc_switch_stomp_on_off) {
    	  println('F2:STOMP '+midi.data1+' '+onOff(midi.data2))
 	}
-	else if (midi.data1=cc_switch_mod_on_off) {
+	else if (midi.data1==cc_switch_mod_on_off) {
    	  println('F3:MOD '+midi.data1+' '+onOff(midi.data2))
-	}else if (midi.data1=cc_switch_delay_on_off) {
+	}else if (midi.data1==cc_switch_delay_on_off) {
    	  println('F4: AMP '+midi.data1+' '+onOff(midi.data2))
 	}
-	else if (midi.data1=cc_momentary_tap) {
+	else if (midi.data1==cc_momentary_tap) {
 	  println('F5:TAP '+midi.data1+' '+midi.data2)
 		
 	}
 	
-	else if (midi.data1=cc_knob_01) {
-	  println('K1:drive knob: '+midi.data1+' '+midi.data2)
+	else if (midi.data1==cc_knob_01) {
+	  println('K1:drive knob: '+midi.data1+' '+midi.data2);
 	}
-	else if (midi.data1=cc_knob_02) {
-	  println('K2:bass knob: '+midi.data1+' '+midi.data2)
+	else if (midi.data1==cc_knob_02) {
+	  println('K2:bass knob: '+midi.data1+' '+midi.data2);
 	}
-	else if (midi.data1=cc_knob_03) {
-	  println('K3:lo mid knob: '+midi.data1+' '+midi.data2)
+	else if (midi.data1==cc_knob_03) {
+	  println('K3:lo mid knob: '+midi.data1+' '+midi.data2);
 	}
-	else if (midi.data1=cc_knob_04) {
-	  println('K4:hi mid knob: '+midi.data1+' '+midi.data2)
+	else if (midi.data1==cc_knob_04) {
+	  println('K4:hi mid knob: '+midi.data1+' '+midi.data2);
 	}	
-	else if (midi.data1=cc_knob_05) {
-	  println('K5:treble knob: '+midi.data1+' '+midi.data2)
+	else if (midi.data1==cc_knob_05) {
+	  println('K5:treble knob: '+midi.data1+' '+midi.data2);
 	}	
-	else if (midi.data1=cc_knob_06) {
-	  println('K6:channel vol knob: '+midi.data1+' '+midi.data2)
+	else if (midi.data1==cc_knob_06) {
+	  println('K6:channel vol knob: '+midi.data1+' '+midi.data2);
 	}	
 
 
 	else
 	{
-		println('Other CC: '+midi.data1+' '+midi.data2)
+		println('Other CC#'+midi.data1+' with data value '+midi.data2)
 	}
 
 
@@ -322,61 +333,89 @@ if (trace==2) {
 
 
 if (midi.isChannelController()) {
-  if (midi.data1=cc_switch_amp_on_off) {
+
+  if (midi.data1 ==cc_switch_amp_on_off) {
         //F1 functions
-      do_function(1, bank, midi.data2);
+      if (last_cc != -1) {
+        do_function(1, bank, midi.data2);
+      }
   }
-  else if (midi.data1=cc_switch_stomp_on_off) {
+  else if (midi.data1 ==cc_switch_stomp_on_off) {
         //F2 functions
       do_function(2, bank, midi.data2);
   }
-  else if (midi.data1=cc_switch_mod_on_off) {
+  else if (midi.data1 ==cc_switch_mod_on_off) {
         //F3 functions
       do_function(3, bank, midi.data2);
   }
-  else if (midi.data1=cc_switch_delay_on_off) {
+  else if (midi.data1 ==cc_switch_delay_on_off) {
         //F4 functions
       do_function(4, bank, midi.data2);
   }
-  else if (midi.data1=cc_momentary_tap) {
+  else if (midi.data1 ==cc_momentary_tap) {
       //F5 functions [momentary]
       do_function(5, bank, 0);
       
   }
-  else if (midi.data1=cc_knob_01) {
+  else if (midi.data1 ==cc_knob_01) {
       //println('K1:drive knob: '+midi.data1+' '+midi.data2)
+      keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
   }
   else if (midi.data1=cc_knob_02) {
       //println('K2:bass knob: '+midi.data1+' '+midi.data2)
+      keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
   }
   else if (midi.data1=cc_knob_03) {
       //println('K3:lo mid knob: '+midi.data1+' '+midi.data2)
+      keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
   }
   else if (midi.data1=cc_knob_04) 
   {
       //println('K4:hi mid knob: '+midi.data1+' '+midi.data2)
+      keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
   }	
   else if (midi.data1=cc_knob_05) 
   {
       //println('K5:treble knob: '+midi.data1+' '+midi.data2)
+      keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
   }	
   else if (midi.data1=cc_knob_06) {
       //println('K6:channel vol knob: '+midi.data1+' '+midi.data2)
+      keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
   }	
+  else if (midi.data1=cc_volume_pedal) {
+    //println('vol pedal cc7');
+    keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
+  }	  
   else
   {
       //println('Other CC: '+midi.data1+' '+midi.data2)
   }
+  last_cc = midi.data1;
+
 }
 else if (midi.isProgramChange()) {
      // TODO PROGRAM CHANGE.
 	 program= midi.data1;	
-	 bank = program / 4;
-	 bankfunction = program % 4;
-	 
-	 println(' program = '+program );
-	 println(' bank = '+ bank );
-	 println(' bankfunction = '+ bankfunction );	 
+   bank = 1+Math.floor( program / 4 );
+
+   
+   // get A,B,C,D buttons as the variable bankfunction
+   bankfunction = program % 4;
+   if (bankfunction==0) {
+     bankfunction = 4; 
+   }
+   if (trace>1) {
+  	  println(' :: program = '+program );
+      println(' :: bank = '+ bank );
+      println(' :: bankfunction = '+ bankfunction );	 
+      println(' :: PC may be immediately followed by a spurious CC :: ');
+   }
+   
+   last_cc = -1;
+  
+   // on the current track, bankfunction 1 should select the first clip track, bankfunction 2 should select the second clip track. 
+
 	 
    }
 
