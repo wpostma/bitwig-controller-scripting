@@ -1,11 +1,12 @@
 // Line6 Pod XT Script : Warren Postma : warren.postma@gmail.com 
 // (Don't expect support by email.  You want to ask a question ask on the KVR forums.)
 
-loadAPI(1);
+//loadAPI(1);
+loadAPI(14); // where are these API levels even documented?
 
-println('PODXTLive 1.0.  Type trace=1 for light tracing, trace=2 for full debug tracing');
+println('PODXTLive 1.0.1. trace=0 : debug output off,  trace=1 : tracing on,  trace=2 full tracing');
 
-var trace = 0;
+var trace = 2;
 
 load ("Extensions.js");
 
@@ -26,6 +27,7 @@ var presetHasChanged = false;
 var pageNames = [];
 var pageNumber = 0;
 var pageHasChanged = false;
+var activescene = 0;
 
 // global:
 var cc_volume_pedal 	= 7;
@@ -88,8 +90,8 @@ function init()
    //tracks = host.createTrackBank(8, 2, 0);
    //trackBank = host.createTrackBankSection(8, 1, 0);
    
-   cTrack = host.createCursorTrack(3, 0);
-   cDevice = cTrack.getPrimaryDevice();
+   cursorTrack = host.createCursorTrack(3, 8);
+   cursorDevice = cursorTrack.getPrimaryDevice();
    
    uControl = host.createUserControls(6); // 0-5 : knobs. 
    for (var i = 0; i < 6; i++) {
@@ -99,9 +101,7 @@ function init()
 
    //setIndications("track");
 
-
-
-   cTrack.addNameObserver(50, "None", function(name){
+   cursorTrack.addNameObserver(50, "None", function(name){
       tName = name;
       if (tNameHasChanged) {
          println('::track::> '+name);
@@ -109,7 +109,7 @@ function init()
       }
    });
 
-   cDevice.addNameObserver(50, "None", function(name){
+   cursorDevice.addNameObserver(50, "None", function(name){
       dName = name;
       if (dNameHasChanged) {
          println('::device::> '+name);
@@ -117,7 +117,7 @@ function init()
       }
    });
 
-   cDevice.addPresetNameObserver(50, "None", function(name){
+   cursorDevice.addPresetNameObserver(50, "None", function(name){
       pName = name;
       if (presetHasChanged) {
          println('::preset::> '+name);
@@ -125,7 +125,7 @@ function init()
       }
    });
 
-   cDevice.addPageNamesObserver(function(names) {
+   cursorDevice.addPageNamesObserver(function(names) {
       pageNames = [];
       for(var j = 0; j < names.length; j++) {
          pageNames[j] = names[j];
@@ -133,7 +133,7 @@ function init()
       }
    });
 
-   cDevice.addSelectedPageObserver(-1, function(val) {
+   cursorDevice.addSelectedPageObserver(-1, function(val) {
       pageNumber = val;
       if (pageHasChanged) {
          println("Parameter Page " + (val+1) + ": " + pageNames[val]);
@@ -204,22 +204,41 @@ function do_function(number,bank,vdata)
 	}
 	else if (bank == 2) {
 		// bank 2 
-		if (number == 1) {
-      transport.togglePunchIn();
-      showPopupNotification('punch in')
+		if ( (number == 1) &&  (vdata == 0) ){
+			transport.play();
+			showPopupNotification('play');
+		}
+		else if ( (number == 1) &&  (vdata != 0) ) {
+			transport.stop();
+			showPopupNotification('stop');		
 		}
 		else if (number == 2) {
-      transport.togglePunchOut();
-      showPopupNotification('punch out')
+        // in bank 1 it's the main record, in bank 2, let's do a clip record.
+        
+        scene = 3;
+        //track = 1;
+        //trackBank.getTrack(track).getClipLauncher().record(scene);
+        //cursorTrack.clipLauncherSlotBank().record(scene);
+        
+        bank = cursorTrack.clipLauncherSlotBank();
+        
+        bank.select(activescene);
+        bank.record(activescene);
+        activescene = activescene + 1;        
+        if (activescene >= 8) {
+          activescene = 0;
+        }
+
+        showPopupNotification('record clip '+activescene );
 		}
 		else if (number == 3) {
       transport.toggleClick();
       showPopupNotification('click track');
 		}	
 		else if (number == 4) {
-			//SOLO
-      groove.getEnabled().set( vdata, 127);
-      showPopupNotification('solo');
+			
+
+
 		}	
 		else if (number == 5)  {
       // TODO, BANK 2, FUNCTION 5
@@ -242,7 +261,18 @@ function do_function(number,bank,vdata)
 		}	
 		else if (number == 5)   {
 			// todo
-		}	
+    }	
+    
+
+      //groove.getEnabled().set( vdata, 127);
+      //showPopupNotification('groove');
+
+      //transport.togglePunchIn();
+      //showPopupNotification('punch in')
+      
+      //transport.togglePunchOut();
+      //showPopupNotification('punch out')
+
 		
 	}
 	
