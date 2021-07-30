@@ -1,9 +1,9 @@
 // Line6 Pod XT Script : Warren Postma : warren.postma@gmail.com 
-// (Don't expect support by email.  You want to ask a question ask on the KVR forums.)
+// (Don"t expect support by email.  You want to ask a question ask on the KVR forums.)
 
 loadAPI(14); // Bitwig 4.0.1+
 
-println('PODXTLive 1.0.1. trace=0 : debug output off,  trace=1 : tracing on,  trace=2 full tracing');
+println("PODXTLive 1.0.1. trace=0 : debug output off,  trace=1 : tracing on,  trace=2 full tracing ");
 
 // host.setShouldFailOnDeprecatedUse(true);
 
@@ -16,7 +16,7 @@ host.defineController("Line6", "PodXTLive", "1.0", "3937b2bc-23da-45c1-8eb0-5f83
 
 host.defineMidiPorts(1, 1);
 
-
+var clip_mode= false;
 
 var Mode = "Track";
 var SubMode = "VolPan";
@@ -29,7 +29,9 @@ var presetHasChanged = false;
 var pageNames = [];
 var pageNumber = 0;
 var pageHasChanged = false;
-var activescene = 0;
+
+var activescene = 0; // insert location for clip record
+var autoplayscene = -1; // when >=0, and we press stop, in bank 2, start playing the recently recorded clip.
 
 // global:
 var cc_volume_pedal 	= 7;
@@ -63,8 +65,10 @@ var last_cc = 0;
 
 
 
+
 function showPopupNotification(msg) {
- println('::> '+msg);
+ println("::> "+msg);
+
  host.showPopupNotification(msg);
 }
 
@@ -86,9 +90,9 @@ function init()
    masterTrack = host.createMasterTrackSection(0);
    trackBank = host.createTrackBankSection(8, 4, 99);
    transport = host.createTransportSection();
-   keys = host.getMidiInPort(0).createNoteInput("MiniLab Keys", "80????", "90????", "B001??", "B002??", "B007??", "B00B??", "B040??", "C0????", "D0????", "E0????");
+   keys = host.getMidiInPort(0).createNoteInput("PodXTLive Keys", "80????", "90????", "B001??", "B002??", "B007??", "B00B??", "B040??", "C0????", "D0????", "E0????");
    keys.setShouldConsumeEvents(false);
-   
+   sceneBank = host.createSceneBank(8);
 
 
    //tracks = host.createTrackBank(8, 2, 0);
@@ -104,60 +108,33 @@ function init()
       
 
    //setIndications("track");
-
    try {
-
    cursorTrack.clipLauncherSlotBank().addIsSelectedObserver	(	function(index,selected)
     {
         if (selected) {
-          println('selected : '+index);
+          println(" user selected : " + index);
+          activescene = index;
         }
     });
-
-   cursorTrack.addNameObserver(50, "None", function(name){
-      tName = name;
-      if (tNameHasChanged) {
-         println('::track::> '+name);
-         tNameHasChanged = false;
-      }
-   });
-
-   cursorDevice.addNameObserver(50, "None", function(name){
-      dName = name;
-      if (dNameHasChanged) {
-         println('::device::> '+name);
-         dNameHasChanged = false;
-      }
-   });
-
-   cursorDevice.addPresetNameObserver(50, "None", function(name){
-      pName = name;
-      if (presetHasChanged) {
-         println('::preset::> '+name);
-         presetHasChanged = false;
-      }
-   });
-
-   cursorDevice.addPageNamesObserver(function(names) {
-      pageNames = [];
-      for(var j = 0; j < names.length; j++) {
-         pageNames[j] = names[j];
-		    println('::page name:: '+j+' '+names[j]);
-      }
-   });
-
-   cursorDevice.addSelectedPageObserver(-1, function(val) {
-      pageNumber = val;
-      if (pageHasChanged) {
-         println("Parameter Page " + (val+1) + ": " + pageNames[val]);
-         pageHasChanged = false;
-      }
-   });
-
   } catch(e) {
-    
-    println('bitwig sucks donkey balls');
+    println("Unable to observe cursorTrack launcher selected ");
   }
+
+  try {
+    
+    cursorDevice.presetName().addValueObserver( 50, "None", function(name){
+    pName = name;
+    if (presetHasChanged) {
+       println( " ::preset::> "+name);
+       presetHasChanged = false;
+    }
+ });
+ } catch(e) {
+  println( "Unable to observe preset name changes");
+}
+
+
+  
 
    
 
@@ -171,7 +148,7 @@ function init()
       host.getNotificationSettings().setShouldShowMappingNotifications (true);
       host.getNotificationSettings().setShouldShowValueNotifications (true);
    } catch(e) {
-	   println('notification setup failure ')
+	   println("host notification setup failure ")
    }
 
    host.scheduleTask(pollState, null, 500);
@@ -180,6 +157,30 @@ function init()
 function pollState() {
    sendSysex("F0 00 20 6B 7F 42 01 00 00 2F F7");
 }
+
+function playclipat(row, column) {
+  if (row<0) {
+    row = 0;
+  }
+  if (column<0) {
+    column = 0;
+  }
+  if (clip_mode) {
+    println("in clip mode launching scene " + column);
+    trackBank.getChannel(row).getClipLauncherSlots().launch(column);
+  } 
+  else {
+    // in scene mode the 1st row (top row in scene 1 on nano) controls scenes in Bitwig
+    if (row == 0) {
+        println("in scene mode and row 0, launching scene " + column);
+        trackBank.launchScene(column);
+    } else {
+      trackBank.getChannel(row).getClipLauncherSlots().launch(column);
+      println("channel launch "+row+"  " + column);
+    }
+}
+}
+
 
 
 
@@ -192,72 +193,89 @@ var last_exec = {
 function do_function(number,bank,vdata)
 {
   if (trace>0) {
-    println('do_function '+number+' '+bank+' '+vdata);
+    println("do_function "+number+" "+bank+" "+vdata);
   }
 
 	// bank 1 
 	if (bank == 1) {
 		if ( (number == 1) &&  (vdata == 0) ){
 			transport.play();
-			showPopupNotification('play');
+			showPopupNotification("play");
 		}
 		else if ( (number == 1) &&  (vdata != 0) ) {
 			transport.stop();
-			showPopupNotification('stop');		
+			showPopupNotification("stop");		
 		}
 		else if  (number == 2) {
 			transport.record();
-			showPopupNotification('record');
+			showPopupNotification("record");
 		}
 		else if  (number == 3)  {
 			transport.toggleLoop();
-			showPopupNotification('toggle loop');
+			showPopupNotification("toggle loop");
 		}	
 		else if (number == 4)   {
 			transport.rewind();
-			showPopupNotification('rewind');
+			showPopupNotification("rewind");
 		}	
 		else if (number == 5)    {
 			transport.fastForward();
-			showPopupNotification('fast forward');		 
+			showPopupNotification("fast forward");		 
 		}
 	}
 	else if (bank == 2) {
 		// bank 2 
-		if ( (number == 1) &&  (vdata == 0) ){
+    if ((number==1) &&(autoplayscene >=0) ) {
+        //transport.stop(); // stops recording
+        showPopupNotification("stop record");
+
+        bank = cursorTrack.clipLauncherSlotBank();
+        bank.select(autoplayscene);
+        
+        //sceneBank.launchScene(autoplayscene);
+        // ransport.play();  // no worky.
+        playclipat( 0, autoplayscene );
+
+        //transport.play();
+        
+        showPopupNotification("loop playback "+autoplayscene);	
+        autoplayscene = -1;
+    }
+    else
+    if ( (number == 1) &&  (vdata == 0) ){
 			transport.play();
-			showPopupNotification('play');
+			showPopupNotification("play");
 		}
 		else if ( (number == 1) &&  (vdata != 0) ) {
-			transport.stop();
-			showPopupNotification('stop');		
-		}
+			transport.stop(); // stops recording
+      
+     
+        showPopupNotification("stop");	
+    }
 		else if (number == 2) {
-        // in bank 1 it's the main record, in bank 2, let's do a clip record.
+        // in bank 1 it"s the main record, in bank 2, let"s do a clip record.
         
-        scene = 3;
-        //track = 1;
-        //trackBank.getTrack(track).getClipLauncher().record(scene);
-        //cursorTrack.clipLauncherSlotBank().record(scene);
+        
         
         bank = cursorTrack.clipLauncherSlotBank();
         
         bank.select(activescene);
         //bank.record(activescene);
-        
-        cursorTrack.recordNewLauncherClip (activescene);
+        //cursorTrack = host.createCursorTrack(3, 8);
 
+        cursorTrack.recordNewLauncherClip (activescene);
+        autoplayscene = activescene;
 
         activescene = activescene + 1;        
         if (activescene >= 8) {
           activescene = 0;
         }
 
-        showPopupNotification('record clip '+activescene );
+        showPopupNotification("record clip "+activescene );
 		}
 		else if (number == 3) {
       transport.toggleClick();
-      showPopupNotification('click track');
+      showPopupNotification("click track");
 		}	
 		else if (number == 4) {
 			
@@ -266,7 +284,7 @@ function do_function(number,bank,vdata)
 		}	
 		else if (number == 5)  {
       // TODO, BANK 2, FUNCTION 5
-      showPopupNotification('todo');
+      showPopupNotification("todo");
 		}	
 	}
 	else if (bank == 3 ) {
@@ -289,13 +307,13 @@ function do_function(number,bank,vdata)
     
 
       //groove.getEnabled().set( vdata, 127);
-      //showPopupNotification('groove');
+      //showPopupNotification("groove");
 
       //transport.togglePunchIn();
-      //showPopupNotification('punch in')
+      //showPopupNotification("punch in")
       
       //transport.togglePunchOut();
-      //showPopupNotification('punch out')
+      //showPopupNotification("punch out")
 
 		
 	}
@@ -327,61 +345,61 @@ function onMidi(status, data1, data2) {
    var midi = new MidiData(status, data1, data2);
 
 if (trace>0) {
-  println('onmidi '+callcount+' --> '+status+','+midi.data1+','+midi.data2);
+  println("onmidi "+callcount+" --> "+status+","+midi.data1+","+midi.data2);
    if (midi.isChannelController()) {
    	
 	if (midi.data1==cc_switch_amp_on_off) {
-   	  println('F1:AMP '+midi.data1+' '+onOff(midi.data2))
+   	  println("F1:AMP "+midi.data1+" "+onOff(midi.data2))
 	}
 	else if (midi.data1==cc_switch_stomp_on_off) {
-   	  println('F2:STOMP '+midi.data1+' '+onOff(midi.data2))
+   	  println("F2:STOMP "+midi.data1+" "+onOff(midi.data2))
 	}
 	else if (midi.data1==cc_switch_mod_on_off) {
-   	  println('F3:MOD '+midi.data1+' '+onOff(midi.data2))
+   	  println("F3:MOD "+midi.data1+" "+onOff(midi.data2))
 	}else if (midi.data1==cc_switch_delay_on_off) {
-   	  println('F4: AMP '+midi.data1+' '+onOff(midi.data2))
+   	  println("F4: AMP "+midi.data1+" "+onOff(midi.data2))
 	}
 	else if (midi.data1==cc_momentary_tap) {
-	  println('F5:TAP '+midi.data1+' '+midi.data2)
+	  println("F5:TAP "+midi.data1+" "+midi.data2)
 		
 	}
 	
 	else if (midi.data1==cc_knob_01) {
-	  println('K1:drive knob: '+midi.data1+' '+midi.data2);
+	  println("K1:drive knob: "+midi.data1+" "+midi.data2);
 	}
 	else if (midi.data1==cc_knob_02) {
-	  println('K2:bass knob: '+midi.data1+' '+midi.data2);
+	  println("K2:bass knob: "+midi.data1+" "+midi.data2);
 	}
 	else if (midi.data1==cc_knob_03) {
-	  println('K3:lo mid knob: '+midi.data1+' '+midi.data2);
+	  println("K3:lo mid knob: "+midi.data1+" "+midi.data2);
 	}
 	else if (midi.data1==cc_knob_04) {
-	  println('K4:hi mid knob: '+midi.data1+' '+midi.data2);
+	  println("K4:hi mid knob: "+midi.data1+" "+midi.data2);
 	}	
 	else if (midi.data1==cc_knob_05) {
-	  println('K5:treble knob: '+midi.data1+' '+midi.data2);
+	  println("K5:treble knob: "+midi.data1+" "+midi.data2);
 	}	
 	else if (midi.data1==cc_knob_06) {
-	  println('K6:channel vol knob: '+midi.data1+' '+midi.data2);
+	  println("K6:channel vol knob: "+midi.data1+" "+midi.data2);
 	}	
 
 
 	else
 	{
-		println('Other CC#'+midi.data1+' with data value '+midi.data2)
+		println("Other CC#"+midi.data1+" with data value "+midi.data2)
 	}
 
 
 
    }
    else if (midi.isNoteOn()) {
-	println('note on '+midi.data1+' '+midi.data2)
+	println("note on "+midi.data1+" "+midi.data2)
    } 
    else if (midi.isNoteOff()) {
-	println('note off '+midi.data1+' '+midi.data2)
+	println("note off "+midi.data1+" "+midi.data2)
    }
    else if (midi.isProgramChange()) {
-	   println('program change '+midi.data1+' '+midi.data2)
+	   println("program change "+midi.data1+" "+midi.data2)
    }
 }// end cc trace
 
@@ -412,38 +430,38 @@ if (midi.isChannelController()) {
       
   }
   else if (midi.data1 ==cc_knob_01) {
-      //println('K1:drive knob: '+midi.data1+' '+midi.data2)
+      //println("K1:drive knob: "+midi.data1+" "+midi.data2)
       keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
   }
   else if (midi.data1=cc_knob_02) {
-      //println('K2:bass knob: '+midi.data1+' '+midi.data2)
+      //println("K2:bass knob: "+midi.data1+" "+midi.data2)
       keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
   }
   else if (midi.data1=cc_knob_03) {
-      //println('K3:lo mid knob: '+midi.data1+' '+midi.data2)
+      //println("K3:lo mid knob: "+midi.data1+" "+midi.data2)
       keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
   }
   else if (midi.data1=cc_knob_04) 
   {
-      //println('K4:hi mid knob: '+midi.data1+' '+midi.data2)
+      //println("K4:hi mid knob: "+midi.data1+" "+midi.data2)
       keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
   }	
   else if (midi.data1=cc_knob_05) 
   {
-      //println('K5:treble knob: '+midi.data1+' '+midi.data2)
+      //println("K5:treble knob: "+midi.data1+" "+midi.data2)
       keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
   }	
   else if (midi.data1=cc_knob_06) {
-      //println('K6:channel vol knob: '+midi.data1+' '+midi.data2)
+      //println("K6:channel vol knob: "+midi.data1+" "+midi.data2)
       keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
   }	
   else if (midi.data1=cc_volume_pedal) {
-    //println('vol pedal cc7');
+    //println("vol pedal cc7");
     keys.sendRawMidiEvent(midi.status, midi.data1, midi.data2);
   }	  
   else
   {
-      //println('Other CC: '+midi.data1+' '+midi.data2)
+      //println("Other CC: "+midi.data1+" "+midi.data2)
   }
   last_cc = midi.data1;
 
@@ -460,10 +478,10 @@ else if (midi.isProgramChange()) {
      bankfunction = 4; 
    }
    if (trace>1) {
-  	  println(' :: program = '+program );
-      println(' :: bank = '+ bank );
-      println(' :: bankfunction = '+ bankfunction );	 
-      println(' :: PC may be immediately followed by a spurious CC :: ');
+  	  println(" :: program = "+program );
+      println(" :: bank = "+ bank );
+      println(" :: bankfunction = "+ bankfunction );	 
+      println(" :: PC may be immediately followed by a spurious CC :: ");
    }
    
    last_cc = -1;
@@ -581,6 +599,8 @@ function setIndications() {
 
 }
 */
+
+println("READY.")
 
 function exit()
 {
