@@ -88,7 +88,7 @@ function init()
    application = host.createApplicationSection();
    groove = host.createGrooveSection();
    masterTrack = host.createMasterTrackSection(0);
-   trackBank = host.createTrackBankSection(8, 4, 99);
+   trackBank = host.createTrackBankSection(8, 4, 99); // this trackbank is probably the first 8 tracks but who the fuck knows with the vague ass documentation bitwig devs provide.
    transport = host.createTransportSection();
    keys = host.getMidiInPort(0).createNoteInput("PodXTLive Keys", "80????", "90????", "B001??", "B002??", "B007??", "B00B??", "B040??", "C0????", "D0????", "E0????");
    keys.setShouldConsumeEvents(false);
@@ -100,6 +100,8 @@ function init()
    
    cursorTrack = host.createCursorTrack(3, 8);
    cursorDevice = cursorTrack.getPrimaryDevice();
+   //cursorTrack.selectPrevious();
+   //cursorTrack.selectNext();
    
    uControl = host.createUserControls(6); // 0-5 : knobs. 
    for (var i = 0; i < 6; i++) {
@@ -279,13 +281,28 @@ function do_function(number,bank,vdata)
 		}	
 		else if (number == 4) {
 			
+      //transport.play();
+      if (vdata == 0) {
+        transport.continuePlayback();
+        showPopupNotification("continue");
+      } else {
+        transport.stop();
+        showPopupNotification("stop");
+      }
 
-
+      
 		}	
 		else if (number == 5)  {
-      // TODO, BANK 2, FUNCTION 5
-      showPopupNotification("todo");
-		}	
+      // This will play the first clip in the project if it exists.
+      // If no clip exists we don't yet know what code to write to actually find out is there anything to launch
+      // and then don't return true/false from the launch() method, like they should have.
+      row=1;
+      column=1;
+      //trackBank.getChannel(row).getClipLauncherSlots().launch(column);
+      trackBank.getChannel(row).getClipLauncherSlots().launch(column);
+
+    }
+			
 	}
 	else if (bank == 3 ) {
 		// bank 3
